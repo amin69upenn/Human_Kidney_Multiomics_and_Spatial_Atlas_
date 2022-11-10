@@ -1,0 +1,58 @@
+# Human_Kidney_Multiomics_and_Spatial_Atlas_
+#HK.SN.ATAC_seq Analysis
+library (Signac)
+library(Seurat)
+library (dplyr)
+library(ggplot2)
+library (harmony)
+library (patchwork)
+library (EnsDb.Hsapiens.v86)
+library(rtracklayer)
+#--------------------------Prepare Object---------------------------------#
+annotation <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86)
+genome(annotation) <- "hg38"
+seqlevelsStyle(annotation) <- "UCSC"
+counts <- Read10X_h5(filename = "/Your_Path/filtered_peak_bc_matrix.h5")
+metadata <- read.csv(file = "/Your_Path/singlecell.csv", header = TRUE,row.names = 1)
+fragpath <- "/Your_Path/outs/fragments.tsv.gz"
+chromatin.assay <- CreateChromatinAssay(counts = counts, sep = c(":", "-"),fragments = fragpath,annotation = annotation)
+Control1.S <- CreateSeuratObject(counts = chromatin.assay,assay = "peaks",meta.data = metadata)
+
+#Annotation
+hg38 <- import("/Your_Path_To_GTF_File/genes.gtf.gz")
+genome(hg38) <- "hg38"
+seqlevelsStyle(hg38) <- "UCSC"
+hg38$gene_biotype <- hg38$gene_type
+Annotation(Control1.S) <- hg38
+#QC Filtering
+Control1.S <- NucleosomeSignal(object = Control1.S)
+Control1.S <- TSSEnrichment(Control1.S, fast = FALSE)
+Control1.S$pct_reads_in_peaks <- Control1.S$peak_region_fragments / Control1.S$passed_filters * 100
+Control1.S$blacklist_ratio <- Control1.S$blacklist_region_fragments / Control1.S$peak_region_fragments
+Control1.S$high.tss <- ifelse(Control1.S$TSS.enrichment > 2, 'High', 'Low')
+pdf("Viloin.HK.Fetal.Mito.pdf", width=6, height=4)
+TSSPlot(Control1.S, group.by = 'high.tss') + NoLegend()
+Control1.S$nucleosome_group <- ifelse(Control1.S$nucleosome_signal > 4, 'NS > 4', 'NS < 4')
+FragmentHistogram(object = Control1.S, group.by = 'nucleosome_group')
+pdf("HK2481_1.ATAC.QC.pdf", width=18, height=4)
+VlnPlot(object = Control1.S, features = c('pct_reads_in_peaks', 'peak_region_fragments', 'TSS.enrichment', 'blacklist_ratio', 'nucleosome_signal'), pt.size = 0.1, ncol = 5)
+Control1.S <- subset(x = Control1.S, subset = peak_region_fragments > 3000 & peak_region_fragments < 20000 & pct_reads_in_peaks > 15 & blacklist_ratio < 0.05 & nucleosome_signal < 4 & TSS.enrichment > 2)
+#Do this step for all 20 samples
+#--------------------------Merge Datasets---------------------------------#
+HK.SN.ATAC = merge (x = Control1.S, y = list(#list of all other objects))
+#--------------------------Pre-processing---------------------------------#  
+HK.SN.ATAC <- RunTFIDF(HK.SN.ATAC)
+HK.SN.ATAC <- FindTopFeatures(HK.SN.ATAC, min.cutoff = 'q0')
+HK.SN.ATAC <- RunSVD(HK.SN.ATAC)
+HK.SN.ATAC <- RunHarmony(
+  object = HK.SN.ATAC,
+  group.by.vars = 'dataset',
+  reduction = 'lsi',
+  assay.use = 'peaks',
+  project.dim = FALSE
+)
+HK.SN.ATAC <- RunUMAP(HK.SN.ATAC, dims = 2:50, reduction = 'harmony')
+HK.SN.ATAC <- RunUMAP(HK.SN.ATAC, reduction = "harmony", dims = 2:50)
+HK.SN.ATAC <- FindNeighbors(HK.SN.ATAC, reduction = "harmony", dims = 2:50) %>% FindClusters()
+#--------------------------DAR---------------------------------#
+DARs <- FindAllMarkers(object = HK.SN.ATAC, min.pct = 0.05, test.use = 'LR', latent.vars = 'peak_region_fragments')
