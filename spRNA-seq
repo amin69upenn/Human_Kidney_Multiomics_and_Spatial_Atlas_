@@ -1,0 +1,43 @@
+# Human_Kidney_Multiomics_and_Spatial_Atlas_
+#HK spRNA-seq Analysis
+library (dplyr)
+library (ggplot2)
+library(SeuratData)
+library (harmony)
+library (patchwork)
+library (Seurat)
+options(stringsAsFactors = F)
+library(CellTrek)
+library(Seurat)
+library(viridis)
+library(ConsensusClusterPlus)
+set.seed(123)
+#-----------------------------Loading Spatial Data------------------------------#
+Control1.ST = Load10X_Spatial("/Your_10X_Output/outs", filename = "filtered_feature_bc_matrix.h5", assay = "Spatial", slice = "slice1")
+#Load all 7 samples
+#-----------------------------Preprocessing------------------------------#
+Control1.ST <- SCTransform(Control1.ST, assay = "Spatial", verbose = FALSE)
+#Do it for all samples
+#-----------------------------Merge All SCT spatial samples------------------------------#
+HK.ST = merge (Control1.ST, y =c (#All the ST objects))
+  
+#-----------------------------Merge All SCT spatial samples------------------------------# 
+HK.ST <- RunPCA(HK.ST, assay = "SCT", verbose = FALSE)
+HK.ST <- RunHarmony(HK.ST, group.by.vars = "orig.ident")
+HK.ST <- RunUMAP(HK.ST, reduction = "harmony", dims = 1:30)
+HK.ST <- FindNeighbors(HK.ST, reduction = "harmony", dims = 1:30) %>% FindClusters()
+
+#-----------------------------Find DEGs between Clusters------------------------------# 
+HK.ST <- FindAllMarkers(HK.ST, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+
+#-----------------------------------Mapping Back snRNA-seq, scRNA-seq, and snATAC-seq to Spatial dataset----------------------#
+HK.SN <- HK.SN[, sample(colnames(HK.SN), size =20000, replace=F)] #Downsample the annotated snRNA-seq matrix
+Control1.ST = Load10X_Spatial("/Your_10X-Folder/outs", filename = "filtered_feature_bc_matrix.h5", assay = "Spatial", slice = "slice1")
+Control1.ST <- RenameCells(Control1.ST, new.names=make.names(Cells(Control1.ST)))
+HK.SN.ATAC <- RenameCells(HK.SN, new.names=make.names(Cells(HK.SN)))
+Coltrol1.ST.Samples_traint <- CellTrek::traint(st_data=Control1.ST, sc_data=HK.SN.ATAC, sc_assay='RNA', cell_names='seurat_clusters')
+Control1.ST.HK.SN_celltrek <- CellTrek::celltrek(st_sc_int=Coltrol1.ST.Samples_traint, int_assay='traint', sc_data=HK.SN, sc_assay = 'RNA', reduction='pca', intp=T, intp_pnt=5000, intp_lin=F, nPCs=30, ntree=1000, dist_thresh=0.55, top_spot=5, spot_n=5, repel_r=20, repel_iter=20, keep_model=T)$celltrek
+Control1.ST.HK.SN_celltrek$seurat_clusters <- factor(Control1.ST.HK.SN_celltrek$seurat_clusters, levels=sort(Control1.ST.HK.SN_celltrek$seurat_clusters)))
+Idents = Control1.ST.HK.SN_celltrek[["Idents2"]]
+Idents (Control1.ST.HK.SN_celltrek) = Idents
+#Do this for all samples as well as with the reference of scRNA-seq and snATAC-seq
