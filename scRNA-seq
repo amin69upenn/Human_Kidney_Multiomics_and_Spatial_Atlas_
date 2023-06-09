@@ -7,6 +7,11 @@ library (harmony)
 library (patchwork)
 library (SoupX)
 library (DoubletFinder)
+library(reticulate)
+library(sceasy)
+library(anndata)
+library(patchwork)
+library(SeuratDisk)
 
 #================================Ambient RNA Correction===============================#
 Control1 = load10X('path/to/your/cellranger/outs/folder')
@@ -34,11 +39,11 @@ HK_SC_RNA = merge (Control1.S.Filtered, y = c (#All other sc filtered objects))
 HK_SC_RNA[["percent.mt"]] <- PercentageFeatureSet(HK_SC_RNA, pattern = "^MT-")
 
 #============================Pre Processing======================================================#
-HK_SC_RNA <- subset(HK_SC_RNA, subset = nFeature_RNA > 200 & nFeature_RNA < 3000 & percent.mt < 50)
+HK_SC_RNA <- subset(HK_SC_RNA, subset = nFeature_RNA > 200 & nFeature_RNA < 3000 & percent.mt < 50 & percent.rpl < 15 & percent.rps < 15)
 
 HK_SC_RNA <- FindVariableFeatures(object = HK_SC_RNA,selection.method = "vst")
 HK_SC_RNA <- NormalizeData(HK_SC_RNA)
-HK_SC_RNA <- ScaleData(HK_SC_RNA, vars.to.regress = c ("nCount_RNA", "percent.mt"))
+HK_SC_RNA <- ScaleData(HK_SC_RNA, vars.to.regress = c ("nCount_RNA", "percent.mt", "percent.rpl", "percent.rps"))
 HK_SC_RNA <- RunPCA(HK_SC_RNA, assay = 'RNA', npcs = 30, features = VariableFeatures(object = HK_SC_RNA), 
                               verbose = TRUE, ndims.print = 1:5, nfeatures.print = 10)
 
@@ -48,5 +53,43 @@ HK_SC_RNA <- RunUMAP(HK_SC_RNA, reduction = "harmony", dims = 1:30)
 HK_SC_RNA <- FindNeighbors(HK_SC_RNA, reduction = "harmony", dims = 1:30) %>% FindClusters()				   
 DimPlot(HK_SC_RNA, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
 
-#================================== DEG List==============================#
+#================================== DEG List and cell type annotation==============================#
 HK_SC_RNA.Markers <- FindAllMarkers(HK_SC_RNA, only.pos = TRUE, logfc.threshold = 0.25)
+
+#================================== Annotation and store data as Idents==============================#
+HK_SC_RNA <- RenameIdents(HK_SC_RNA, `0` = "PT")
+#Do it for all clusters
+
+#================================== Further cleaning the data==============================#
+#load a previously published dataset (Wilson et al. 2022, Nature communication)
+HK.Hum  =readRDS ("HK.Hum.Clusters.Idents.2.2.2023.rds")
+transfer.anchors <- FindTransferAnchors(reference = HK.Hum,query = HK_SC_RNA,reduction = 'cca', normalization.method = "SCT")
+saveRDS (transfer.anchors, file = "transfer.anchors.HK.SN.Hum.2.2.2023.rds")
+predicted.labels <- TransferData(
+  anchorset = transfer.anchors,
+  refdata = HK_Him$celltype,
+  weight.reduction = HK_SC_RNA[['pca']],
+  dims = 1:50
+)
+HK_SC_RNA <- AddMetaData(object = HK_SC_RNA, metadata = predicted.labels)
+#================================== Remove the cells if "predicted labels" mismatch with "Idents" ==============================#
+indices <- which(HK_SC_RNA$meta.data$Idents == HK.Hum$meta.data$celltype)
+HK_SC_RNA_Filtered <- subset(HK_SC_RNA, cells = colnames(HK_SC_RNA)[indices])
+
+#==================================Perform re-clustering in the clean dataset ==============================#
+
+HK_SC_RNA_Filtered <- FindVariableFeatures(object = HK_SC_RNA_Filtered,selection.method = "vst")
+HK_SC_RNA_Filtered <- NormalizeData(HK_SC_RNA_Filtered)
+HK_SC_RNA_Filtered <- ScaleData(HK_SC_RNA_Filtered, vars.to.regress = c ("nCount_RNA", "percent.mt", "percent.rpl", "percent.rps"))
+HK_SC_RNA_Filtered <- RunPCA(HK_SC_RNA_Filtered, assay = 'RNA', npcs = 30, features = VariableFeatures(object = HK_SC_RNA_Filtered), 
+                              verbose = TRUE, ndims.print = 1:5, nfeatures.print = 10)
+HK_SC_RNA_Filtered <- RunHarmony(HK_SC_RNA_Filtered, group.by.vars = "orig.ident")
+HK_SC_RNA_Filtered <- RunUMAP(HK_SC_RNA_Filtered, reduction = "harmony", dims = 1:30)
+HK_SC_RNA_Filtered <- FindNeighbors(HK_SC_RNA_Filtered, reduction = "harmony", dims = 1:30) %>% FindClusters()				   
+DimPlot(HK_SC_RNA_Filtered, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+
+HK_SC_RNA_Filtered.Markers <- FindAllMarkers(HK_SC_RNA_Filtered, only.pos = TRUE, logfc.threshold = 0.25)
+
+#==================================Convert to adata using sceasy ==============================#
+HK_SC_RNA_anndata <- convertFormat(HK_SC_RNA_Filtered, from="seurat", to="anndata", main_layer="counts", drop_single_values=FALSE)
+write_h5ad(HK_SC_RNA_anndata, filename = "HK_SC_RNA_anndata.h5ad")
