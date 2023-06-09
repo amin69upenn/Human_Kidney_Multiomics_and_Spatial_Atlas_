@@ -76,11 +76,11 @@ HK_SN_RNA_Filtered <- subset(HK_SN_RNA, cells = colnames(HK_SN_RNA)[indices])
 HK_SN_RNA_Filtered <- FindVariableFeatures(object = HK_SN_RNA_Filtered,selection.method = "vst")
 HK_SN_RNA_Filtered <- NormalizeData(HK_SN_RNA_Filtered)
 HK_SN_RNA_Filtered <- ScaleData(HK_SN_RNA_Filtered, vars.to.regress = c ("nCount_RNA", "percent.mt", "percent.rpl", "percent.rps"))
-HK_SN_RNA_Filtered <- RunPCA(HK_SN_RNA_Filtered, assay = 'RNA', npcs = 30, features = VariableFeatures(object = HK_SN_RNA_Filtered), 
+HK_SN_RNA_Filtered <- RunPCA(HK_SN_RNA_Filtered, assay = 'RNA', npcs = 50, features = VariableFeatures(object = HK_SN_RNA_Filtered), 
                               verbose = TRUE, ndims.print = 1:5, nfeatures.print = 10)
 HK_SN_RNA_Filtered <- RunHarmony(HK_SN_RNA_Filtered, group.by.vars = "orig.ident")
-HK_SN_RNA_Filtered <- RunUMAP(HK_SN_RNA_Filtered, reduction = "harmony", dims = 1:30)
-HK_SN_RNA_Filtered <- FindNeighbors(HK_SN_RNA_Filtered, reduction = "harmony", dims = 1:30) %>% FindClusters()				   
+HK_SN_RNA_Filtered <- RunUMAP(HK_SN_RNA_Filtered, reduction = "harmony", dims = 1:50)
+HK_SN_RNA_Filtered <- FindNeighbors(HK_SN_RNA_Filtered, reduction = "harmony", dims = 1:50) %>% FindClusters()				   
 DimPlot(HK_SN_RNA_Filtered, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
 
 HK_SN_RNA_Filtered.Markers <- FindAllMarkers(HK_SN_RNA_Filtered, only.pos = TRUE, logfc.threshold = 0.25)
