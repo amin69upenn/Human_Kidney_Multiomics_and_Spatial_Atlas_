@@ -24,7 +24,7 @@ Control1.S <- NormalizeData(Control1.S)
 Control1.S <- FindVariableFeatures(Control1.S, selection.method = "vst", nfeatures = 2000)
 Control1.S <- ScaleData(Control1.S)
 Control1.S <- RunPCA(Control1.S)
-Control1.S <- RunUMAP(Control1.S, dims = 1:30)
+Control1.S <- RunUMAP(Control1.S, dims = 1:50)
 sweep.res.list_kidney <- paramSweep_v3(Control1.S, PCs = 1:30, sct = FALSE)
 sweep.stats_kidney <- summarizeSweep(sweep.res.list_kidney, GT = FALSE)
 bcmvn_kidney <- find.pK(sweep.stats_kidney) #determine the pk
