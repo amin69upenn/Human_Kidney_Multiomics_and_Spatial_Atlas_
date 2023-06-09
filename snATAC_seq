@@ -8,6 +8,11 @@ library (harmony)
 library (patchwork)
 library (EnsDb.Hsapiens.v86)
 library(rtracklayer)
+library(reticulate)
+library(sceasy)
+library(anndata)
+library(patchwork)
+library(SeuratDisk)
 #--------------------------Prepare Object---------------------------------#
 annotation <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86)
 genome(annotation) <- "hg38"
@@ -56,3 +61,38 @@ HK.SN.ATAC <- RunUMAP(HK.SN.ATAC, reduction = "harmony", dims = 2:50)
 HK.SN.ATAC <- FindNeighbors(HK.SN.ATAC, reduction = "harmony", dims = 2:50) %>% FindClusters()
 #--------------------------DAR---------------------------------#
 DARs <- FindAllMarkers(object = HK.SN.ATAC, min.pct = 0.05, test.use = 'LR', latent.vars = 'peak_region_fragments')
+
+#================================== Further cleaning the data==============================#
+#load a previously published dataset (Wilson et al. 2022, Nature communication)
+HK.Hum  =readRDS ("HK.Hum.Clusters.Idents.2.2.2023.rds")
+DefaultAssay(object = HK_SN_ATAC) <- "RNA"
+transfer.anchors <- FindTransferAnchors(reference = HK.Hum,query = HK_SN_ATAC,reduction = 'cca', normalization.method = "SCT")
+saveRDS (transfer.anchors, file = "transfer.anchors.HK.SN.Hum.2.2.2023.rds")
+predicted.labels <- TransferData(
+  anchorset = transfer.anchors,
+  refdata = HK_Him$celltype,
+  weight.reduction = HK_SN_ATAC[['lsi']],
+  dims = 2:30
+)
+HK_SN_ATAC <- AddMetaData(object = HK_SN_ATAC, metadata = predicted.labels)
+#================================== Remove the cells if "predicted labels" mismatch with "Idents" ==============================#
+indices <- which(HK_SN_ATAC$meta.data$Idents == HK.Hum$meta.data$celltype)
+HK_SN_ATAC_Filtered <- subset(HK_SN_ATAC, cells = colnames(HK_SN_ATAC)[indices])
+
+#==================================Perform re-clustering in the clean dataset ==============================#
+
+HK_SN_ATAC_Filtered <- FindVariableFeatures(object = HK_SN_ATAC_Filtered,selection.method = "vst")
+HK_SN_ATAC_Filtered <- NormalizeData(HK_SN_ATAC_Filtered)
+HK_SN_ATAC_Filtered <- ScaleData(HK_SN_ATAC_Filtered, vars.to.regress = c ("nCount_RNA", "percent.mt", "percent.rpl", "percent.rps"))
+HK_SN_ATAC_Filtered <- RunPCA(HK_SN_ATAC_Filtered, assay = 'RNA', npcs = 30, features = VariableFeatures(object = HK_SN_ATAC_Filtered), 
+                              verbose = TRUE, ndims.print = 1:5, nfeatures.print = 10)
+HK_SN_ATAC_Filtered <- RunHarmony(HK_SN_ATAC_Filtered, group.by.vars = "orig.ident")
+HK_SN_ATAC_Filtered <- RunUMAP(HK_SN_ATAC_Filtered, reduction = "harmony", dims = 1:30)
+HK_SN_ATAC_Filtered <- FindNeighbors(HK_SN_ATAC_Filtered, reduction = "harmony", dims = 1:30) %>% FindClusters()				   
+DimPlot(HK_SN_ATAC_Filtered, reduction = "umap", label = TRUE, pt.size = 0.5) + NoLegend()
+
+HK_SN_ATAC_Filtered.Markers <- FindAllMarkers(HK_SN_ATAC_Filtered, only.pos = TRUE, logfc.threshold = 0.25)
+
+#==================================Convert to adata using sceasy ==============================#
+HK_SN_ATAC_anndata <- convertFormat(HK_SN_ATAC_Filtered, from="seurat", to="anndata", main_layer="counts", drop_single_values=FALSE)
+write_h5ad(HK_SN_ATAC_anndata, filename = "HK_SN_ATAC_anndata.h5ad")
