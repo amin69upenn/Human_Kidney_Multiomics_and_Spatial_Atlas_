@@ -197,3 +197,6 @@ res_dict, adata = run_colocation(
     adata,
     model_name='CoLocatedGroupsSklearnNMF',
     train_args={'n_fact': np.arange(5, 25), 'n_restarts': 3 })
+    
+    
+# Perform all the steps in all 14 samples.
