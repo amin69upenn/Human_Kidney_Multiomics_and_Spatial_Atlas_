@@ -1,1 +1,113 @@
+import scvi
+import scanpy as sc
+import sys
+import sys
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import anndata
+import scvi
+import scanpy as sc
+import matplotlib
+import csv
+import os
+seed=123
+
+adata_SN = sc.read ("HK.SN.2.26.2023.h5ad")
+
+adata_SC = sc.read ("HK.SC.AfterImmuneCleaning.2.19.2023.h5ad")
+
+adata_SN_ATAC = sc.read ("HK.SN.ATAC.2.26.2023.h5ad")
+
+
+adata_SN.X =np.rint(adata_SN.X)
+
+adata_SC.X =np.rint(adata_SC.X)
+
+
+adata_SN_ATAC.X =np.rint(adata_SN_ATAC.X)
+adata_SN.obs['tech'] = 'SN_RNA'
+
+
+adata_SC.obs['tech'] = 'SC_RNA'
+
+adata_SN_ATAC.obs['tech'] = 'SN_ATAC'
+adata_SC.obs['proj'] = 'HK_SC'
+adata_SN.obs['proj'] = 'HK_SN'
+adata_SN_ATAC.obs['proj'] = 'HK_SN_ATAC'
+adata_SN.obs['orig_ident'] = adata_SN.obs['orig.ident']
+adata_SC.obs['orig_ident'] = adata_SC.obs['orig.ident']
+adata_SN_ATAC.obs['orig_ident'] = adata_SN_ATAC.obs['dataset']
+adata_SN.obs['percent_mt'] = adata_SN.obs['percent.mt']
+adata_SC.obs['percent_mt'] = adata_SC.obs['percent.mt']
+adata_HK_SC_SN_ATAC = adata_SN.concatenate(adata_SC, adata_SN_ATAC, 
+    join="inner",
+    batch_key=None,
+    index_unique=None
+)
+adata = adata_HK_SC_SN_ATAC
+sc.pp.filter_genes(adata, min_counts=3)
+
+sc.pp.filter_genes(adata, min_counts=3)
+
+adata.layers["counts"] = adata.X.copy() # preserve counts
+
+sc.pp.log1p(adata)
+
+adata.raw = adata # freeze the state in `.raw`
+
+sc.pp.highly_variable_genes(
+    adata,
+    n_top_genes=3000,
+    subset=True,
+    layer="counts",
+    flavor="seurat_v3",
+    batch_key="tech")
+    
+    scvi.model.SCVI.setup_anndata(
+    adata, 
+    batch_key="tech",
+    layer="counts", categorical_covariate_keys=["orig_ident"], 
+    continuous_covariate_keys=["percent_mt", "nCount_RNA", "nFeature_RNA"])
+model = scvi.model.SCVI(adata)
+model
+vae = scvi.model.SCVI(adata, n_layers=4, n_latent=30, gene_likelihood="nb", dropout_rate=0.1)
+vae.train(max_epochs = 600, plan_kwargs={"lr":0.001}, early_stopping = True, early_stopping_patience = 15)
+model = vae
+
+model = scvi.model.SCVI.load("Model_HK_SC_SN_ATAC2_3000HVG_New_Dim45_2_2.26.2023", adata=adata, use_gpu=False)
+
+
+latent = model.get_latent_representation()
+
+
+adata.obsm["X_scVI"] = latent
+
+denoised = model.get_normalized_expression(adata, library_size=1e4)
+denoised.iloc[:5, :5]
+
+adata.layers["scvi_normalized"] = model.get_normalized_expression(
+    library_size=10e4
+)
+sc.pp.neighbors(adata, use_rep="X_scVI")
+sc.tl.umap(adata, min_dist=0.3)
+sc.pl.umap(
+    adata,
+    color=["Idents"],
+    frameon=False,
+)
+sc.pl.umap(
+    adata,
+    color=["tech"],
+    ncols=2,
+    frameon=False,
+)
+
+
+sc.tl.leiden(adata, key_added='scVI_res1', resolution=1)
+sc.tl.leiden(adata, key_added='scVI_res2', resolution=2)
+sc.tl.leiden(adata, key_added='scVI_res3', resolution=3)
+sc.tl.leiden(adata, key_added='scVI_res4', resolution=4)
+sc.tl.leiden(adata, key_added='scVI_res8', resolution=8)
+
 
